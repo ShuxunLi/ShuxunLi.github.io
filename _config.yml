@@ -1,22 +1,21 @@
 # Site settings
-title: Your Blog
-SEOTitle: 你的博客 | Your Blog
+title:  ShuxunLi Blog
+SEOTitle: 李书勋 Blog
 header-img: img/home-bg.jpg
-email: huxpro@gmail.com
-description: ""
+email: lishuxun1992@foxmail.com
+description: "哎呦， 不错哦"
 keyword: ""
-url: "http://huangxuan.me"              # your host, for absolute URL
-baseurl: "/huxblog-boilerplate"         # for example, '/blog' if your blog hosted on 'host/blog'
-
+url: ""              # your host, for absolute URL
+baseurl: "/huxblog-boilerplate"       
 
 
 # SNS settings
 RSS: false
-weibo_username:     huxpro
-zhihu_username:     huxpro
-github_username:    huxpro
-#twitter_username:  huxpro
-facebook_username:  huxpro
+weibo_username:     u/5300680178
+zhihu_username:     Vrigil/activities
+github_username:    false
+#twitter_username:  false
+facebook_username:  false
 
 
 
@@ -44,39 +43,24 @@ markdown: kramdown
 kramdown:
   input: GFM                            # use Github Flavored Markdown !important
 
-
-
 # Disqus settings
-#disqus_username: _your_disqus_short_name_
-
-# Duoshuo settings
-duoshuo_username: huxblog
-# Share component is depend on Comment so we can NOT use share only.
-duoshuo_share: true                     # set to false if you want to use Comment without Sharing
-
-
+#disqus_username: _shuxunli_
+                   
 
 
 # Analytics settings
 # Baidu Analytics
-ba_track_id: 4cc1f2d8f3067386cc5cdb626a202900
-# Google Analytics
-ga_track_id: 'UA-49627206-1'            # Format: UA-xxxxxx-xx
-ga_domain: huangxuan.me
-
+ba_track_id: 954468d78e4d5b4f0313eca842a02754
 
 
 # Sidebar settings
-sidebar: true                           # whether or not using Sidebar.
-sidebar-about-description: "写写代码，做做设计，看看产品。世界那么大，多玩玩看看。"
-sidebar-avatar: /img/avatar-hux.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
-
-
+sidebar: true                           
+sidebar-about-description: "多读书，多看报，少吃零食，多睡觉"
+sidebar-avatar: /img/avatar-vrigil.jpg 
 
 # Featured Tags
-featured-tags: true                     # whether or not using Feature-Tags
-featured-condition-size: 1              # A tag will be featured if the size of it is more than this condition value
-
+featured-tags: true                     
+featured-condition-size: 1            
 
 
 # Friends
@@ -98,5 +82,3 @@ friends: [
         href: "#"
     }
 ]
-
-theme: jekyll-theme-cayman
