@@ -3,11 +3,10 @@ title: 李书勋
 SEOTitle: 李书勋 | Shuxun Li Blog
 header-img: img/home-bg.jpg
 email: shuxun.li.virgil@gmail.com
-description: ""
+description: "厚积薄发"
 keyword: ""
-url: "http://shuxunli.github.io"             
-baseurl: "/blog"
-root: "/blog"       
+url: "https://shuxunli.github.io"             
+root: "shuxunli"       
 
 
 # SNS settings
@@ -26,8 +25,7 @@ highlighter: rouge
 permalink: pretty
 paginate: 10
 exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
-anchorjs: true                          # if you want to customize anchor. check out line:181 of `post.html`
-
+anchorjs: true                         
 
 
 # Gems
@@ -69,8 +67,7 @@ ga_domain: huangxuan.me
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
 sidebar-about-description: "写写代码，做做设计，看看产品。世界那么大，多玩玩看看。"
-sidebar-avatar: /img/avatar-hux.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
-
+sidebar-avatar: /img/avatar-vrigil.jpg
 
 
 # Featured Tags
