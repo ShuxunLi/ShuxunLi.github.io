@@ -1,19 +1,19 @@
 # Site settings
-title: Your Blog
-SEOTitle: 你的博客 | Your Blog
+title: 李书勋
+SEOTitle: 李书勋 | Shuxun Li Blog
 header-img: img/home-bg.jpg
-email: huxpro@gmail.com
+email: shuxun.li.virgil@gmail.com
 description: ""
 keyword: ""
-url: "http://huangxuan.me"              # your host, for absolute URL
-baseurl: "/huxblog-boilerplate"         # for example, '/blog' if your blog hosted on 'host/blog'
-
+url: "http://shuxunli.github.io"             
+baseurl: "/blog"
+root: "/blog"       
 
 
 # SNS settings
 RSS: false
-weibo_username:     huxpro
-zhihu_username:     huxpro
+weibo_username:     /u/5300680178/
+zhihu_username:     Vrigil/
 github_username:    huxpro
 #twitter_username:  huxpro
 facebook_username:  huxpro
