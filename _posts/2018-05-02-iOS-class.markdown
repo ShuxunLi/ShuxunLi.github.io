@@ -1,0 +1,346 @@
+---
+layout:     post
+title:      "iOS isa 和 class"
+subtitle:   "iOS runtime中的isa 和 class"
+date:       2018-05-02
+author:     "李书勋"
+header-img: "img/post-bg-js-version.jpg"
+tags:
+    - iOS
+    - runtime
+---
+
+## Foreword
+
+>以下源码均来自[objc4-723](https://opensource.apple.com//source/objc4/)  
+>本文抄袭文章`一缕殇流化隐半边冰霜` 的文章[神经病院 Objective-C Runtime 入院第一天— isa 和 Class](http://ios.jobbole.com/89209/) &`Draveness` 的文章 [深入解析 ObjC 中方法的结构](https://github.com/Draveness/analyze/blob/master/contents/objc/%E6%B7%B1%E5%85%A5%E8%A7%A3%E6%9E%90%20ObjC%20%E4%B8%AD%E6%96%B9%E6%B3%95%E7%9A%84%E7%BB%93%E6%9E%84.md#%E6%B7%B1%E5%85%A5%E8%A7%A3%E6%9E%90-objc-%E4%B8%AD%E6%96%B9%E6%B3%95%E7%9A%84%E7%BB%93%E6%9E%84)
+
+---
+
+## Catalog
+1. [Object & NSObject](#object--nsobject) 
+2. [isa_t](#isa_t)
+3. [cache_t](#cache_t)
+4. [class_data_bits_t](#class_data_bits_t)  
+      * [class_rw_t & class_ro_t](#class_rw_t--class_ro_t)
+5. [method_t](#method_t)
+      * [SEL](#sel)
+      * [IMP](#imp)
+6. [Summarize](#summarize)
+
+---
+
+## Object & NSObject
+
+NSObject的定义如下
+```objc
+typedef struct objc_class *Class;
+
+@interface NSObject <NSObject> {
+    Class isa  OBJC_ISA_AVAILABILITY;
+}
+```
+
+在Objc2.0以前，objc_class的源码如下：
+
+```objc
+struct objc_class {
+Class isa  OBJC_ISA_AVAILABILITY;
+
+#if !__OBJC2__
+Class super_class                                        OBJC2_UNAVAILABLE;
+const char *name                                         OBJC2_UNAVAILABLE;
+long version                                             OBJC2_UNAVAILABLE;
+long info                                                OBJC2_UNAVAILABLE;
+long instance_size                                       OBJC2_UNAVAILABLE;
+struct objc_ivar_list *ivars                             OBJC2_UNAVAILABLE;
+struct objc_method_list **methodLists                    OBJC2_UNAVAILABLE;
+struct objc_cache *cache                                 OBJC2_UNAVAILABLE;
+struct objc_protocol_list *protocols                     OBJC2_UNAVAILABLE;
+#endif
+
+} OBJC2_UNAVAILABLE;
+```
+
+在这里我们可以注意到， 在一个类中，有超类的指针，类名， 版本信息。
+`ivars`是objc_ivar_list成员变量列表的指针；`methodLists`是指向**objc_method_list指针**的指针, `*methodLists`是指向方法列表的指针。 这里动态修改`*methodLists`的值来添加成员方法，是Categoty实现的原理，同时也解释了`Category`不能添加属性的原因。
+
+在2006年苹果发布Objec2.0后， `objc_class`的定义如下：
+
+```objc
+OBJC_AVAILABLE(10.0, 2.0, 9.0, 1.0, 2.0)
+OBJC_ROOT_CLASS
+OBJC_EXPORT
+@interface NSObject <NSObject> {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wobjc-interface-ivars"
+     Class isa  OBJC_ISA_AVAILABILITY;
+#pragma clang diagnostic pop
+}
+
+
+typedef struct objc_class *Class;
+typedef struct objc_object *id;
+
+#if __OBJC2__
+__OSX_AVAILABLE(10.0) 
+__IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+__WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE
+OBJC_ROOT_CLASS
+@interface Object { 
+Class isa; 
+}
+
+struct objc_object {
+private:
+isa_t isa;
+public:
+   //省略
+}
+
+struct objc_class : objc_object {
+// Class ISA
+
+Class superclass;
+cache_t cache;             // formerly cache pointer and vtable
+
+class_data_bits_t bits;    // class_rw_t * plus custom rr/alloc flags
+
+//省略
+}
+```
+
+在objc2.0中, 所有的对象都包含一个`isa_t`类型的结构体。  
+`objc_object` 被`typedef`成了`id`类型, 这就是使用中的id类型。这个结构中就包含一个`isa_t`类型的结构体。  
+`objc_class`继承`objc_object`。 `object_class`也包含一个`isa_t`类型的结构体`isa`。所以可以得出结论：**`Objective-C` 类也是一个对象**。`objc_class` 中，除了包含`isa`外， 还包含3个成员变量。 一个是父类的指针， 一个是方法的缓存， 该类的实例方法的链表。  
+`object`类和`NSObject`类里面分别都包含一个`objc_class`类型的`isa`。
+![object-c](http://chuantu.biz/t6/305/1525692918x-1404793106.png)
+
+---
+
+## isa_t
+ 当一个对象的实例方法被调用的时候， 会通过`isa`找到相应的类， 然后在该类的`class_data_bits_t`中查找方法。`class_data_bits_t` 是指向类对象的数据区域，在该数据区域内查找对应方法的实现。
+ 这里为了和对象查找方法的机制一致，遂引入了[元类(meta-class)](http://www.cocoawithlove.com/2010/01/what-is-meta-class-in-objective-c.html)的概念。  
+ 对象的实例方法调用时，通过对象的`isa`在类中获取方法的实现。
+ 类对象的类方法调用时，通过类的 `isa`在元类中获取方法的实现。  
+ `meta-class`之所以重要，是因为它存储着一个类的所有类方法。每个类都会有一个单独的`meta-class`，因为每个类的类方法基本不可能完全相同。
+ 对应关系的图如下图，下图很好的描述了对象，类，元类之间的关系:
+ ![对象，类，元类图](http://chuantu.biz/t6/305/1525760728x-1404758335.png)
+ 图中实线是 super_class指针，虚线是isa指针。
+ 
+1.  `Root class (class)`其实就是`NSObject`，`NSObject`是没有超类的，所以`Root class(class)`的`superclass`指向`nil`。  
+2. 每个`Class`都有一个`isa`指针指向唯一的`Meta class`。  
+3. `Root class(meta)`的`superclass`指向`Root class(class)`，也就是`NSObject`，形成一个回路。  
+4. 每个`Meta class`的`isa`指针都指向`Root class (meta)`。  
+
+ 我们其实应该明白，类对象和元类对象是唯一的，对象是可以在运行时创建无数个的。而在`main`方法执行之前，从 `dyld`到`runtime`这期间，类对象和元类对象在这期间被创建。具体可看sunnyxx这篇[iOS 程序 main 函数之前发生了什么](http://blog.sunnyxx.com/2014/08/30/objc-pre-main/)
+ 
+ ---
+ 
+## cache_t
+
+```objc
+#if __LP64__
+
+typedef uint32_t mask_t;  // x86_64 & arm64 asm are less efficient with 16-bits
+
+#else
+
+typedef uint16_t mask_t;
+#endif
+
+typedef uintptr_t cache_key_t;
+
+struct cache_t {
+struct bucket_t *_buckets;
+mask_t _mask;
+mask_t _occupied;
+}
+
+struct bucket_t {
+private:
+cache_key_t _key;
+IMP _imp;
+}
+
+```
+
+![ cache_t类图](http://chuantu.biz/t6/305/1525762714x-1404793106.png)
+
+根据源码， 我们可以获知`cache_t`存储了一个`bucket_t`的结构体， 和两个`uint32_t/uint16_t(unsigned int)`的变量。
+
+`mask` : 分配用来缓存 `bucket` 的总数。
+`occupied` ：目前实际占用的缓存`bucket`的个数
+
+`bucket_t`的结构体中存储了一个`uintptr_t(unsigned long)`和一个`IMP`。`IMP`是一个函数指针，指向了一个方法的具体实现。
+
+`cache_t`中的`bucket_t *`,`_buckets`其实就是一个散列表，用来存储`Method`的链表。
+
+`cache`的作用主要是为了**优化方法调用的性能**。 当对象`receiver`调用方法`message`时，首先根据对象`receiver`的`isa`指针查找到它对应的类，然后在类的`methodLists`中搜索方法，如果没有找到，就使用`super_class`指针到父类中的`methodLists`查找，一旦找到就调用方法。如果没有找到，有可能消息转发，也可能忽略它。但这样查找方式效率太低，因为往往一个类大概只有20%的方法经常被调用，占总调用次数的80%。所以使用`Cache`来缓存经常调用的方法，当调用方法时，优先在`Cache`查找，如果没有找到，再到`methodLists`查找。**可以想象成我们经常用的到 cache调度算法**。
+
+---
+
+## class_data_bits_t
+
+在 `objc_class` 结构体中的注释写到 `class_data_bits_t` 相当于 `class_rw_t` 指针加上 `rr/alloc` 的标志。
+```objc
+class_data_bits_t bits;    // class_rw_t * plus custom rr/alloc flags
+``` 
+
+它为我们提供了便捷方法用于返回其中的` class_rw_t * `指针：
+
+```objc
+class_rw_t* data() {
+return (class_rw_t *)(bits & FAST_DATA_MASK);
+}
+```
+
+执行 `class_data_bits_t` 结构体中的 data() 方法或者调用 `objc_class` 中的 data() 方法会返回同一个 `class_rw_t *` 指针，因为 `objc_class` 中的方法只是对 `class_data_bits_t` 中对应方法的封装。
+
+```objc
+// objc_class 中的 data() 方法
+class_data_bits_t bits;
+
+class_rw_t *data() { 
+return bits.data();
+}
+
+// class_data_bits_t 中的 data() 方法
+uintptr_t bits;
+
+class_rw_t* data() {
+return (class_rw_t *)(bits & FAST_DATA_MASK);
+}
+```
+
+- ### class_rw_t & class_ro_t
+
+ObjC 类中的属性、方法还有遵循的协议等信息都保存在 `class_rw_t`中：
+
+```objc
+struct class_rw_t {
+
+uint32_t flags;
+uint32_t version;
+
+const class_ro_t *ro;
+
+method_array_t methods;
+property_array_t properties;
+protocol_array_t protocols;
+
+Class firstSubclass;
+Class nextSiblingClass;
+
+char *demangledName;
+
+#if 
+SUPPORT_INDEXED_ISA
+uint32_t index;
+#endif
+
+}
+```
+
+其中还有一个指向常量的指针 `class_ro_t`，其中存储了当前类在编译期就已经确定的属性、方法以及遵循的协议。
+
+```objc
+struct class_ro_t {
+uint32_t flags;
+uint32_t instanceStart;
+uint32_t instanceSize;
+#ifdef __LP64__
+
+uint32_t reserved;
+#endif
+
+const uint8_t * ivarLayout;
+
+const char * name;
+method_list_t * baseMethodList;
+protocol_list_t * baseProtocols;
+const ivar_list_t * ivars;
+
+const uint8_t * weakIvarLayout;
+property_list_t *baseProperties;
+
+method_list_t *baseMethods() const {
+return baseMethodList;
+}
+};
+
+```
+在编译期间类的结构中的 `class_data_bits_t *data` 指向的是一个` class_ro_t * `指针：
+![class_data_bits_t类图](http://chuantu.biz/t6/305/1525764867x-1404793106.png)
+
+
+然后在加载 `Objc` 运行时的时候调用 `realizeClass` 方法：
+
+从 `class_data_bits_t` 调用 data 方法，将结果从` class_rw_t` 强制转换为` class_ro_t` 指针
+初始化一个 `class_rw_t `结构体
+设置结构体 `ro` 的值以及`flag`
+最后设置正确的 `data`。
+```objc
+const class_ro_t *ro = (const class_ro_t *)cls->data();
+class_rw_t *rw = (class_rw_t *)calloc(sizeof(class_rw_t), 1);
+rw->ro = ro;
+rw->flags = RW_REALIZED|RW_REALIZING;
+cls->setData(rw);
+```
+下图是 `realizeClass` 方法执行过后的类所占用内存的布局，你可以与上面调用方法前的内存布局对比以下，看有哪些更改：
+
+![realizeClass后class_data_bits_t类图](http://chuantu.biz/t6/305/1525765185x-1404793106.png)
+
+但是，在这段代码运行之后 `class_rw_t` 中的方法，属性以及协议列表均为空。这时需要 `realizeClass` 调用 `methodizeClass` 方法来将类自己实现的方法（包括分类）、属性和遵循的协议加载到 `methods`、`properties` 和 `protocols` 列表中。
+
+---
+
+## method_t
+
+方法的结构，与类和对象一样，方法在内存中也是一个结构体。
+
+```objc
+struct method_t {
+SEL name;
+const char *types;
+IMP imp;
+
+struct SortBySELAddress :
+public std::binary_function<const method_t&,
+const method_t&, bool>
+{
+bool operator() (const method_t& lhs,
+const method_t& rhs)
+{ return lhs.name < rhs.name; }
+};
+};
+
+```
+
+![方法的结构图](http://chuantu.biz/t6/305/1525765812x-1404793106.png)
+
+- ### SEL
+
+`SEL`类型的参数是`selector`方法选择器。
+```objc
+typedef struct objc_selector *SEL;
+```
+`objc_selector`是一个映射到方法的C字符串。**需要注意的是`@selector()`选择子只与函数名有关。不同类中同名方法所对应的方法选择器是相同的，所以同名不同参的方法拥有相同的方法选择器。由于这点特性，也导致了OC不支持函数重载**。
+
+- ### IMP
+
+```objc
+  typedef id (*IMP)(id, SEL, ...);
+```
+
+`IMP`是一个函数指针，指向的是函数的具体实现。它是指向一个方法实现的指针，每一个方法都有一个对应的IMP，所以，我们可以直接调用方法的IMP指针，来避免方法调用死循环的问题。
+
+---
+
+## Summarize
+
+> 总结一下objc_class 1.0和2.0的差别。
+
+![objc1和objc2对比图](http://chuantu.biz/t6/305/1525766089x-1404793106.png)
+
+---
