@@ -424,7 +424,7 @@ NO/*initialize*/, YES/*cache*/, NO/*resolver*/);
      
 ---
      
- ## Forward
+## Forward
  
  > 在缓存、当前类、父类以及 `resolveInstanceMethod:` 都没有查找到实现的问题时，就回进行方法转发阶段。
  
@@ -440,7 +440,9 @@ NO/*initialize*/, YES/*cache*/, NO/*resolver*/);
  
  ---
  
- ## Summary
+## Summary
+
+`杨萧玉`在[博客](http://yulingtianxia.com/blog/2016/06/15/Objective-C-Message-Sending-and-Forwarding/#%E6%80%BB%E7%BB%93)中有一张消息发送与转发路程流程图,详细的展示了msgSend 是如何工作的。
 
  ![消息发送与转发路径流程图](http://chuantu.biz/t6/308/1525942813x-1404793106.jpg)
  
