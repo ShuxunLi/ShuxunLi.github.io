@@ -16,6 +16,7 @@ tags:
 ## Catagory
 1. [objc_msgSend简介](#objc_msgsend简介)  
       * [id](#id)
+      * [开始前的概括](#开始前的概括)
 2. [缓存命中逻辑](#缓存命中逻辑)
 3. [lookUpImp](#lookupimp)
       * [lookUpMethodList](#lookupmethodlist)
@@ -44,13 +45,18 @@ OBJC_EXPORT id _Nullable
 objc_msgSend(id _Nullable self, SEL _Nonnull op, ...)
 OBJC_AVAILABLE(10.0, 2.0, 9.0, 1.0, 2.0);
 ```
-
 - ### id
 
 ```objc
   typedef struct objc_object *id;
 ```
- [objc_obect]() [SEL]()已有文章解释，在这里不在赘述。
+ [objc_obect](https://shuxunli.github.io/2018/05/02/iOS-class/#object--nsobject) [SEL](https://shuxunli.github.io/2018/05/02/iOS-class/#sel)已有文章解释，在这里不在赘述。
+ 
+ - ### 开始前的概括
+ 
+ > 我认为 msgSend 分了四个阶段，缓存是否命中、查询class和superClass中的cache和MethodLists、方法决议并再次查询class和superClass、消息转发阶段。
+ 
+ ![概括图](http://chuantu.biz/t6/309/1526031677x-1404793106.png)
  
 ---
 
@@ -434,7 +440,20 @@ NO/*initialize*/, YES/*cache*/, NO/*resolver*/);
 ```
  
 进入转发阶段，会调用`id _objc_msgForward(id self, SEL _cmd,…)`方法, 具体代码可以在`objc-msg-arm`、`objc-msg-arm64` 文件中。 由于全是汇编语言， 只能拾人牙慧，参考他人高见。
- 
+- ### ___forwarding___
+
+>  消息妆发的逻辑几乎都写在 `___forwarding___`函数中，博主(玉令天下)整理了整个方法的源码。
+    
+  ![___forwarding___1](http://chuantu.biz/t6/309/1526026502x-1404793106.png)![___forwarding___2](http://chuantu.biz/t6/309/1526026536x-1404793106.png)
+  
+  这些代码的逻辑概括如下：
+  1.  判断`receiverClass`是否实现这个`forwardingTargetForSelector`函数，如果是并且 `forwardingTarget != nil & forwardingTarget ！= receiver`(这里上面的源码，应该是笔误，应该为`if (forwardingTarget && forwardingTarget != receiver)`), 进入`objc_msgSend`或者`objc_msgSend_stret`.`isStret`是一个标记，性能优化；如果不是， 就会进入第2步。
+  2. 这里有对于僵尸对象的log判断和log, 进入第3步.
+  3. 判断`receiverClass`是否实现了`methodSignatureForSelector`函数获取方法签名，如果是，继续判断返回类型信息是否正确， 然后执行第4步， 如果不是，执行第5步。
+  4. 判断是否实现`forwardInvocation` 函数，如果是，执行`forwardInvocation:`函数， 并把结果返回。
+  5. 判断是否实现`doesNotRecognizeSelector`函数，如果是，执行`doesNotRecognizeSelector`函数; 如果不是，打log，END.
+  
+  参考下列文章，感谢博主!   
  [Objective-C 消息发送与转发机制原理](http://yulingtianxia.com/blog/2016/06/15/Objective-C-Message-Sending-and-Forwarding/#forwarding-%E4%B8%AD%E8%B7%AF%E6%BC%AB%E6%BC%AB%E7%9A%84%E6%B6%88%E6%81%AF%E8%BD%AC%E5%8F%91)    
  [Hmmm, What’s that Selector?](http://www.arigrant.com/blog/2013/12/13/a-selector-left-unhandled)
  
