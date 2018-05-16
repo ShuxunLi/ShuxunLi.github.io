@@ -1,0 +1,304 @@
+---
+layout:     post
+title:      "runtime 使用举例"
+subtitle:   ""
+date:       2018-05-14
+author:     "李书勋"
+header-img: "img/post-bg-kuaidi.jpg"
+tags:
+    - iOS
+    - runtime
+    - 翻译
+---
+
+> 前两遍文章，我们大致讲解了runtime的基础和源码逻辑，接下来探究runtime的实际操作。
+
+## Catagory
+1. [Method Swizzling](#method-swizzling)
+      1. [需要的函数](#需要的函数)
+      2. [应用举例](#应用举例)
+           * [明亮模式取image](#明亮模式取image)
+           * [崩溃防御](#崩溃防御)
+      3. [注意情况](#注意情况)
+2. [Forwarding and Multiple Inheritance](#forwarding-and-multiple-inheritance)     
+3. [Associated Object 关联对象](#associated-object-关联对象)
+     1. [需要的函数解析](#需要的函数解析)
+     2. [实现功能  ](#实现功能  )
+     3. [使用场景](#使用场景)
+     4. [源码分析](#源码分析)
+4. [NSCoding的自动归档和自动解档](#nscoding的自动归档和自动解档)
+     1. [实际应用](#实际应用)
+5. [模型字典间互转](#模型字典间互转)
+6. [Summary](#summary)
+
+---
+
+## Method Swizzling
+
+> 我们知道msgsend的实质是寻找IMP的过程， Method Swizzling 的实质就是对IMP和SEL进行交换， A -> B.IMP， B->A.IMP;
+
+- ### 需要的函数
+
+``` objc
+  // 获得某个类的实例对象方法
+  
+  Method class_getInstanceMethod(Class cls, SEL sel)
+```
+
+``` objc
+  // 获得某个类的类方法
+  
+  Method class_getClassMethod(Class cls, SEL sel)
+```
+
+``` objc
+  // 为类添加实现
+  
+  BOOL 
+  class_addMethod(Class cls, SEL name, IMP imp, const char *types)
+```
+
+``` objc
+  // 用一个类的实现替代另一个类的实现
+
+  IMP 
+  class_replaceMethod(Class cls, SEL name, IMP imp, const char *types)
+```
+
+
+``` objc
+  //交换两个方法的实现
+  
+  void method_exchangeImplementations(Method m1, Method m2)
+```
+
+- ### 应用举例
+  1. hook.
+  2. AOP编程.
+- #### 明亮模式取image
+
+> 我们项目中都会出现明暗模式，会出现一个icon具有明暗两种image。 这里我们如果在每个ImageView那里增加逻辑，会比较麻烦而且比较low。 这里我们就可以使用runtime的知识。
+
+1. 我们先 创建一个UIImage的Category。
+2. 实现一个自定义的方法。
+``` objc
+  + (UIImage *)tb_imageNamed:(NSString *)name {
+  if (!isLight) {
+  name = [name stringByAppendingString:@"_d"];
+  }
+  return [UIImage tb_imageNamed:name];
+  }
+```
+3. 最后在category中重写UIImage的load方法，实现方法的交换。
+``` objc
+  + (void)load {
+   // 获取两个类的类方法
+   
+   Method m1 = class_getClassMethod([UIImage class], @selector(imageNamed:)); Method m2 = class_getClassMethod([UIImage class], @selector(tb_imageNamed:)); // 开始交换方法实现
+   method_exchangeImplementations(m1, m2);
+  }
+```
+
+- #### 崩溃防御
+
+  类似[SafeGuard](https://github.com/hongruqi/SafeGuard)
+  
+这段code是如果NSArray越界， 我们可以使用category和Swizzling技术增加异常保护。
+  
+  ![NSArray的越界](http://chuantu.biz/t6/311/1526364977x-1404793106.png)
+  
+  - ### 注意情况
+  
+  1. Swizzling应该总在+load中执行.
+      Objective-C在运行时会自动调用类的两个方法+load和+initialize。+load会在类初始加载时调用， +initialize方法是以懒加载的方式被调用的，如果程序一直没有给某个类或它的子类发送消息，那么这个类的 +initialize方法是永远不会被调用的。所以Swizzling要是写在+initialize方法中，是有可能永远都不被执行，而**+load是一定会被调用**。  
+ 2. Swizzling应该总是在dispatch_once中执行
+      Swizzling会改变全局状态，所以在运行时采取一些预防措施，使用**dispatch_once**就能够确保代码不管有多少线程都只被执行一次。如果运行两次，那么就会交换回去，导致Swizzling失效。   这里 重复调用[super load] 同理。
+      
+  --- 
+  
+##  Forwarding and Multiple Inheritance
+  
+  > 该段文章翻译 于苹果文档中的 [多继承](https://developer.apple.com/library/content/documentation/Cocoa/Conceptual/ObjCRuntimeGuide/Articles/ocrtForwarding.html#//apple_ref/doc/uid/TP40008048-CH105-SW11)。
+  
+ 消息转发可以模仿继承，为Objective-C编程提供多继承的某些效果。 如下图 Figure 5-1, 通过消息转发的对象借用或者"继承"另一个类的方法实现。
+  
+  ![Figure 5-1](http://chuantu.biz/t6/311/1526367223x-1404793106.png)
+  
+  在这个插图中，`Warrior`的实例 向 `Diplomat` 转发了`negotiate`信息，`Warrior`似乎执行了`Diplomat`中的`negotiate`。`Warrior`似乎回应了`negotiate`，处于实现的目的，他确实回应了（但是实际上却是`Diplomat`做的）
+  
+ ---
+ 
+## Associated Object 关联对象
+ 
+   在**Category**是没有办法添加@property， 因为添加@property之后无法生成成员变量，虽然点语法能调用出来，但程序执行后会crash。错误信息比较直观：` unrecognized selector sent to instance xxxxx`.所以我们发现se/get方法系统并没有替我们生成。 我们可以通过关联对象来实现在 **Category**中添加属性的功能了。
+   
+   - ### 需要的函数解析
+   
+   ```objc
+   /*set方法，将值value 跟对象object 关联起来(将值value 存储到对象object 中) 参数 object:给哪个对象设置属性
+   参数 key:一个属性对应一个Key，将来可以通过key取出这个存储的值，key 可以是任 何类型:double、int 等，建议用char 可以节省字节
+   参数 value:给属性设置的值
+   参数policy:存储策略 (assign 、copy 、 retain就是strong)*/
+   
+    void objc_setAssociatedObject(id object, const void *key, id value, objc_AssociationPolicy policy)
+```
+   
+   ```objc
+   // get 方法 利用参数key 将对象object中存储的对应值取出来
+   
+   id objc_getAssociatedObject(id object , const void *key)
+  ```     
+ 
+ ```objc
+  // remove 方法
+  
+  void objc_removeAssociatedObjects(id object)
+ ```
+ 
+ - ### 实现功能
+ 借用这篇经典文章[Associated Objects](http://nshipster.com/associated-objects/)里面的例子来说明一下用法
+ 
+ ```objc
+ // NSObject+AssociatedObject.h
+ @interface NSObject (AssociatedObject)
+ @property (nonatomic, strong) id associatedObject;
+ @end
+ 
+ // NSObject+AssociatedObject.m
+ @implementation NSObject (AssociatedObject)
+ @dynamic associatedObject;
+ 
+ - (void)setAssociatedObject:(id)object {
+ objc_setAssociatedObject(self, @selector(associatedObject), object, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+ }
+ 
+ - (id)associatedObject {
+ return objc_getAssociatedObject(self, @selector(associatedObject));
+ }
+ ```
+ 
+ **特别注意**
+ const void *key 区分不同的关联对象的 key。这里会有3种写法。
+ 
+ 1. 使用 &AssociatedObjectKey 作为key值
+ 
+```objc 
+ static char AssociatedObjectKey = "AssociatedKey";
+```
+
+ 2. 使用AssociatedKey 作为key值
+ ```objc 
+ static const void *AssociatedKey = "AssociatedKey";
+ ```
+ 
+ 3. 使用@selector
+ ```objc 
+ @selector(associatedKey)
+ ```
+ 
+ 3种方法都可以，不过推荐使用更加简洁的第三种方式。
+ 
+ - ###  使用场景
+ 
+ 1. 为现有的类添加私有变量
+ 2. 为现有的类添加公有属性
+ 3. 为KVO创建一个关联的观察者。
+ 
+ - ### 源码分析
+ 
+  后续再补
+  
+ ---
+ 
+## NSCoding的自动归档和自动解档
+ 
+用runtime实现的思路就比较简单，我们循环依次找到每个成员变量的名称，然后利用KVC读取和赋值就可以完成encodeWithCoder和initWithCoder了。
+   
+   - ### 使用的函数
+   
+   获得某个类的所有成员变量（outCount 会返回成员变量的总数）    
+   参数：      
+   1、哪个类     
+   2、放一个接收值的地址，用来存放属性的个数      
+   3、返回值：存放所有获取到的属性，通过下面两个方法可以调出名字和类型      
+   
+   ```objc   
+   Ivar *class_copyIvarList(Class cls , unsigned int *outCount)
+  ```
+  
+   获得成员变量的名字
+   
+  ```objc
+   const char *ivar_getName(Ivar v)
+ ```
+ 
+   获得成员变量的类型
+   
+   ```objc
+   const char *ivar_getTypeEndcoding(Ivar v)
+ ```
+   
+   - ### 实际应用
+   我们可以对NSObject做一个category，让我们不需要每次都写一长串代码，只要实现一小段代码就可以让一个对象具有归解档的能力。大致逻辑如下:
+   
+   ```objc
+   - (void)decode:(NSCoder *)aDecoder {
+   // 一层层父类往上查找，对父类的属性执行归解档方法
+   Class c = self.class;
+   while (c &&c != [NSObject class]) {
+   
+   unsigned int outCount = 0;
+   Ivar *ivars = class_copyIvarList(c, &outCount);
+   for (int i = 0; i < outCount; i++) {
+   Ivar ivar = ivars[i];
+   NSString *key = [NSString stringWithUTF8String:ivar_getName(ivar)];
+   
+   // 如果有实现该方法再去调用
+   if ([self respondsToSelector:@selector(ignoredNames)]) {
+   if ([[self ignoredNames] containsObject:key]) continue;
+   }
+   
+   id value = [aDecoder decodeObjectForKey:key];
+   [self setValue:value forKey:key];
+   }
+   free(ivars);
+   c = [c superclass];
+   }
+   }
+   
+   - (void)encode:(NSCoder *)aCoder {
+   // 一层层父类往上查找，对父类的属性执行归解档方法
+   Class c = self.class;
+   while (c &&c != [NSObject class]) {
+   
+   unsigned int outCount = 0;
+   Ivar *ivars = class_copyIvarList([self class], &outCount);
+   for (int i = 0; i < outCount; i++) {
+   Ivar ivar = ivars[i];
+   NSString *key = [NSString stringWithUTF8String:ivar_getName(ivar)];
+   
+   // 如果有实现该方法再去调用
+   if ([self respondsToSelector:@selector(ignoredNames)]) {
+   if ([[self ignoredNames] containsObject:key]) continue;
+   }
+   
+   id value = [self valueForKeyPath:key];
+   [aCoder encodeObject:value forKey:key];
+   }
+   free(ivars);
+   c = [c superclass];
+   }
+   }  
+ ```
+ 
+   ----
+   
+## 模型字典间互转
+   
+   
+ ---
+ 
+## Summary
+
+
+---
