@@ -21,6 +21,7 @@ tags:
            * [崩溃防御](#崩溃防御)
       3. [注意情况](#注意情况)
 2. [Forwarding and Multiple Inheritance](#forwarding-and-multiple-inheritance)     
+     1. [Forwarding and Inheritance](#forwarding-and-inheritance)
 3. [Associated Object 关联对象](#associated-object-关联对象)
      1. [需要的函数解析](#需要的函数解析)
      2. [实现功能  ](#实现功能  )
@@ -29,7 +30,6 @@ tags:
 4. [NSCoding的自动归档和自动解档](#nscoding的自动归档和自动解档)
      1. [实际应用](#实际应用)
 5. [模型字典间互转](#模型字典间互转)
-6. [Summary](#summary)
 
 ---
 
@@ -125,6 +125,44 @@ tags:
   ![Figure 5-1](http://chuantu.biz/t6/311/1526367223x-1404793106.png)
   
   在这个插图中，`Warrior`的实例 向 `Diplomat` 转发了`negotiate`信息，`Warrior`似乎执行了`Diplomat`中的`negotiate`。`Warrior`似乎回应了`negotiate`，处于实现的目的，他确实回应了（但是实际上却是`Diplomat`做的）
+  
+  - ### Forwarding and Inheritance
+   
+   虽然 forwarding 多继承，但是`NSObject`从来没有被迷惑，能够区分的开。像`respondsToSelector: `and `isKindOfClass:`方法，只看继承的层级结构，不看转发链（the forwarding chain），举例： 如果`Warrior` 对象被问到 是否响应了 `negotiate`,
+   ``` objc
+   if ( [aWarrior respondsToSelector:@selector(negotiate)] )
+   ...
+ ```
+   答案是否定的（NO）, 尽管 它能够接受`negotiate`信息 而且还不报错，在某种意义上，是 `Diplomat` 转发了它。  
+   在很多情况下， `NO`是正确答案。 但是也有可能不是， 如果你用消息转发去创建一个代理对象（a surrogate object）或者去延展一个类的功能。消息转发机制就像继承一样透明， 如果你想让你的对象真的继承消息转发的对象，你需要重新实现`respondsToSelector:`和`isKindOfClass:`方法。
+   
+   ```objc
+   - (BOOL)respondsToSelector:(SEL)aSelector
+   {
+   if ( [super respondsToSelector:aSelector] )
+   return YES;
+   else {
+   /* Here, test whether the aSelector message can     *
+   * be forwarded to another object and whether that  *
+   * object can respond to it. Return YES if it can.  */
+   }
+   return NO;
+   } 
+ ```
+ 除了`respondsToSelector:`and `isKindOfClass:`外， `instancesRespondToSelector:`方法也应该转发算法， 如果协议需要使用，`conformsToProtocol:`方法也需要重写。类似的，如果一个对象 转发它接收到的任何远程消息，应该重写`methodSignatureForSelector`, 让它返回这个最终响应转发消息的方法的准确描述. 举例， 如果一个对象能够消息转发给`surrogate`, 你会实现`methodSignatureForSelector:`如下：
+  ```objc
+  - (NSMethodSignature*)methodSignatureForSelector:(SEL)selector
+  {
+  NSMethodSignature* signature = [super methodSignatureForSelector:selector];
+  if (!signature) {
+  signature = [surrogate methodSignatureForSelector:selector];
+  }
+  return signature;
+  }
+ ```
+ 你可能考虑将转发算法放在某一位置， 并在 `forwardInvocation:`中将其调用。
+  
+  > 注意： 这是个超前的技术，只适用于没有其他解决方案的情况下。它不会作为继承的替代。如果您必须使用这种技术，请确保你完全理解类做转发和转发的类的所有行为。
   
  ---
  
@@ -294,11 +332,293 @@ tags:
    ----
    
 ## 模型字典间互转
+    
+> 此段大量抄袭他人文章，只是不想每次去链接并下拉到文章的底部， 多以copy过来，以便复习。[地址](http://ios.jobbole.com/84919/)
    
    
+以往我们都是利用KVC进行字典转模型，但是它还是有一定的局限性，例如：模型属性和键值对对应不上会crash（虽然可以重写setValue:forUndefinedKey:方法防止报错），模型属性是一个对象或者数组时不好处理等问题，所以无论是效率还是功能上，利用runtime进行字典转模型都是比较好的选择。
+   
+   >  字典转模型我们需要考虑三种特殊情况:      
+  >  1.当字典的key和模型的属性匹配不上         
+  >  2.模型中嵌套模型（模型属性是另外一个模型对象）       
+  >  3.数组中装着模型（模型的属性是一个数组，数组中是一个个模型对象）        
+   
+   根据上面的三种特殊情况，我们一个个处理，先是字典的key和模型的属性不对应的情况。
+   不对应有两种，一种是字典的键值大于模型属性数量，这时候我们不需要任何处理，因为runtime是先遍历模型所有属性，再去字典中根据属性名找对应值进行赋值，多余的键值对也当然不会去看了；另外一种是模型属性数量大于字典的键值对，这时候由于属性没有对应值会被赋值为nil，就会导致crash，我们只需加一个判断即可，JSON数据和sample如下：
+   
+   ![JSON数据](http://chuantu.biz/t6/311/1526461167x-1404793106.png)
+   
+   ```objc
+   - (void)setDict:(NSDictionary *)dict {
+   
+   Class c = self.class;
+   while (c &&c != [NSObject class]) {
+   
+   unsigned int outCount = 0;
+   Ivar *ivars = class_copyIvarList(c, &outCount);
+   for (int i = 0; i < outCount; i++) {
+   Ivar ivar = ivars[i];
+   NSString *key = [NSString stringWithUTF8String:ivar_getName(ivar)];
+   
+   // 成员变量名转为属性名（去掉下划线 _ ）
+   
+   key = [key substringFromIndex:1];
+   // 取出字典的值
+   
+   id value = dict[key];
+   
+   // 如果模型属性数量大于字典键值对数理，模型属性会被赋值为nil而报错
+   
+   if (value == nil) continue;
+   
+   // 将字典中的值设置到模型上
+   
+   [self setValue:value forKeyPath:key];
+   }
+   free(ivars);
+   c = [c superclass];
+   }
+   }
+   ```
+   
+   第二种情况是模型的属性是另外一个模型对象
+   
+   ![JSON数据2](http://chuantu.biz/t6/311/1526461693x-1404793106.png)
+   
+这时候我们就需要利用runtime的ivar_getTypeEncoding 方法获取模型对象类型，对该模型对象类型再进行字典转模型，也就是进行递归，需要注意的是我们要排除系统的对象类型，例如NSString，下面的方法中我添加了一个类方法方便递归。
+   
+   
+   
+   ![打印可以看到各属性类型](http://chuantu.biz/t6/311/1526461715x-1404793106.png)
+   ```objc
+   #import "NSObject+JSONExtension.h"
+   #import <objc/runtime.h>
+   
+   @implementation NSObject (JSONExtension)
+   
+   - (void)setDict:(NSDictionary *)dict {
+   
+   Class c = self.class;
+   while (c &&c != [NSObject class]) {
+   
+   unsigned int outCount = 0;
+   Ivar *ivars = class_copyIvarList(c, &outCount);
+   for (int i = 0; i < outCount; i++) {
+   Ivar ivar = ivars[i];
+   NSString *key = [NSString stringWithUTF8String:ivar_getName(ivar)];
+   
+   // 成员变量名转为属性名（去掉下划线 _ ）
+   
+   key = [key substringFromIndex:1];
+   // 取出字典的值
+   
+   id value = dict[key];
+   
+   // 如果模型属性数量大于字典键值对数理，模型属性会被赋值为nil而报错
+   
+   if (value == nil) continue;
+   
+   // 获得成员变量的类型
+   
+   NSString *type = [NSString stringWithUTF8String:ivar_getTypeEncoding(ivar)];
+   
+   // 如果属性是对象类型
+   
+   NSRange range = [type rangeOfString:@"@"];
+   if (range.location != NSNotFound) {
+   // 那么截取对象的名字（比如@"Dog"，截取为Dog）
+   
+   type = [type substringWithRange:NSMakeRange(2, type.length - 3)];
+   // 排除系统的对象类型
+   
+   if (![type hasPrefix:@"NS"]) {
+   // 将对象名转换为对象的类型，将新的对象字典转模型（递归）
+   
+   Class class = NSClassFromString(type);
+   value = [class objectWithDict:value];
+   }
+   }
+   
+   // 将字典中的值设置到模型上
+   
+   [self setValue:value forKeyPath:key];
+   }
+   free(ivars);
+   c = [c superclass];
+   }
+   }
+   
+   + (instancetype )objectWithDict:(NSDictionary *)dict {
+   NSObject *obj = [[self alloc]init];
+   [obj setDict:dict];
+   return obj;
+   }
+  
+   #import "NSObject+JSONExtension.h"
+   #import <objc/runtime.h>
+   
+   @implementation NSObject (JSONExtension)
+   
+   - (void)setDict:(NSDictionary *)dict {
+   
+   Class c = self.class;
+   while (c &&c != [NSObject class]) {
+   
+   unsigned int outCount = 0;
+   Ivar *ivars = class_copyIvarList(c, &outCount);
+   for (int i = 0; i < outCount; i++) {
+   Ivar ivar = ivars[i];
+   NSString *key = [NSString stringWithUTF8String:ivar_getName(ivar)];
+   
+   // 成员变量名转为属性名（去掉下划线 _ ）
+   
+   key = [key substringFromIndex:1];
+   // 取出字典的值
+   
+   id value = dict[key];
+   
+   // 如果模型属性数量大于字典键值对数理，模型属性会被赋值为nil而报错
+   
+   if (value == nil) continue;
+   
+   // 获得成员变量的类型
+   
+   NSString *type = [NSString stringWithUTF8String:ivar_getTypeEncoding(ivar)];
+   
+   // 如果属性是对象类型
+   
+   NSRange range = [type rangeOfString:@"@"];
+   if (range.location != NSNotFound) {
+   // 那么截取对象的名字（比如@"Dog"，截取为Dog）
+   
+   type = [type substringWithRange:NSMakeRange(2, type.length - 3)];
+   // 排除系统的对象类型
+   
+   if (![type hasPrefix:@"NS"]) {
+   // 将对象名转换为对象的类型，将新的对象字典转模型（递归）
+   
+   Class class = NSClassFromString(type);
+   value = [class objectWithDict:value];
+   }
+   }
+   
+   // 将字典中的值设置到模型上
+   
+   [self setValue:value forKeyPath:key];
+   }
+   free(ivars);
+   c = [c superclass];
+   }
+   }
+   
+   + (instancetype )objectWithDict:(NSDictionary *)dict {
+   NSObject *obj = [[self alloc]init];
+   [obj setDict:dict];
+   return obj;
+   }
+   ```
+   
+   
+   第三种情况是模型的属性是一个数组，数组中是一个个模型对象，例如下面的数据我就可以通过books[0].name获取到C语言程序设计
+   ![JSON数据3](http://chuantu.biz/t6/311/1526463120x-1404793106.png)
+   我们既然能获取到属性类型，那就可以拦截到模型的那个数组属性，进而对数组中每个模型遍历并字典转模型，但是我们不知道数组中的模型都是什么类型，我们可以声明一个方法，该方法目的不是让其调用，而是让其实现并返回模型的类型。
+   
+   **NSObject+JSONExtension.h**
+   
+   ```objc
+   // 返回数组中都是什么类型的模型对象
+   - (NSString *)arrayObjectClass ;
+```
+
+**NSObject+JSONExtension.m**
+
+```objc
+#import "NSObject+JSONExtension.h"
+#import <objc/runtime.h>
+
+@implementation NSObject (JSONExtension)
+
+- (void)setDict:(NSDictionary *)dict {
+
+Class c = self.class;
+while (c &&c != [NSObject class]) {
+
+unsigned int outCount = 0;
+Ivar *ivars = class_copyIvarList(c, &outCount);
+for (int i = 0; i < outCount; i++) {
+Ivar ivar = ivars[i];
+NSString *key = [NSString stringWithUTF8String:ivar_getName(ivar)];
+
+// 成员变量名转为属性名（去掉下划线 _ ）
+
+key = [key substringFromIndex:1];
+// 取出字典的值
+
+id value = dict[key];
+
+// 如果模型属性数量大于字典键值对数理，模型属性会被赋值为nil而报错
+
+if (value == nil) continue;
+
+// 获得成员变量的类型
+
+NSString *type = [NSString stringWithUTF8String:ivar_getTypeEncoding(ivar)];
+
+// 如果属性是对象类型
+
+NSRange range = [type rangeOfString:@"@"];
+if (range.location != NSNotFound) {
+// 那么截取对象的名字（比如@"Dog"，截取为Dog）
+
+type = [type substringWithRange:NSMakeRange(2, type.length - 3)];
+// 排除系统的对象类型
+
+if (![type hasPrefix:@"NS"]) {
+// 将对象名转换为对象的类型，将新的对象字典转模型（递归）
+
+Class class = NSClassFromString(type);
+value = [class objectWithDict:value];
+
+}else if ([type isEqualToString:@"NSArray"]) {
+
+// 如果是数组类型，将数组中的每个模型进行字典转模型，先创建一个临时数组存放模型
+
+NSArray *array = (NSArray *)value;
+NSMutableArray *mArray = [NSMutableArray array];
+
+// 获取到每个模型的类型
+
+id class ;
+if ([self respondsToSelector:@selector(arrayObjectClass)]) {
+
+NSString *classStr = [self arrayObjectClass];
+class = NSClassFromString(classStr);
+}
+// 将数组中的所有模型进行字典转模型
+
+for (int i = 0; i < array.count; i++) {
+[mArray addObject:[class objectWithDict:value[i]]];
+}
+
+value = mArray;
+}
+}
+
+// 将字典中的值设置到模型上
+
+[self setValue:value forKeyPath:key];
+}
+free(ivars);
+c = [c superclass];
+}
+}
+
++ (instancetype )objectWithDict:(NSDictionary *)dict {
+NSObject *obj = [[self alloc]init];
+[obj setDict:dict];
+return obj;
+}
+```
+
  ---
- 
-## Summary
 
-
----
