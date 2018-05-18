@@ -1,0 +1,108 @@
+---
+layout:     post
+title:      "category追本逐源"
+subtitle:   ""
+date:       2018-05-17
+author:     "李书勋"
+header-img: "img/post-bg-kuaidi.jpg"
+tags:
+    - iOS
+    - runtime
+---
+
+>
+
+## Catagory
+   1. [数据结构](#数据结构)
+        * [category_t](#category_t)
+   2. [category如何加载](#category如何加载)
+   3. [涉及知识](#涉及知识)
+   
+---
+
+## 数据结构
+
+- ### category_t
+
+![category_t图](http://chuantu.biz/t6/312/1526543757x-1566638189.png)
+
+
+
+##  category如何加载
+
+> 因为[美团技术团队的文章](https://tech.meituan.com/DiveIntoCategory.html)时代比较久远， 如今苹果的category的源码和美团提供的code已经有了部分改动，所以这里我们这里做个提示。
+
+_read_images 方法中
+
+![category_t1](http://chuantu.biz/t6/312/1526544378x-1404793106.png)![category_t2](http://chuantu.biz/t6/312/1526544396x-1404793106.png)
+
+核心逻辑就是:     
+1)、把category的实例方法、协议以及属性添加到类上       
+2)、把category的类方法和协议添加到类的metaclass上
+
+**注意**    
+`(hasClassProperties && cat->_classProperties)` 说明苹果公司一直留有为category 增加 属性的计划。
+
+我们接着往里看，category的各种列表是怎么最终添加到类上的，就拿实例方法列表来说吧：
+在上述的代码片段里，addUnattachedCategoryForClass只是把类和category做一个关联映射，而remethodizeClass 中的 `attachCategories(cls, cats, true /*flush caches*/)` 才是实际的逻辑函数。 我们看一下这段code。
+
+![remethodizeClassCode](http://chuantu.biz/t6/313/1526625227x-1566638189.png)
+![attachCategoriesCode](http://chuantu.biz/t6/313/1526625246x-1566638189.png)
+
+我们看注释就可以很清楚的知道, 把method list、 protocol list、 property lit 添加到 class上。
+而且 code 也比较好理解， 三个数组`mlists`、`proplists`、`protolists`重新分配内存， 然后遍历category_list， 把 相应的数据分别添加到三个数组中， 最后全部添加到class 上。
+
+
+我们看是如何copy到相应的数组上的
+![attachListsCode](http://chuantu.biz/t6/313/1526628847x-1566638189.png)
+
+**需要注意的点**      
+
+1) 看源码`memcpy(array()->lists, addedLists, addedCount * sizeof(array()->lists[0]));`可以得出，是把category中的数组，添加到class的lists的前面，原来类的方法被放到了新方法列表的后面。这也就是我们说的category会“覆盖”掉原来类的同名方法。 原因是：runtime 查找方法时， 顺着方法列表顺序查找，找到对应的名字，就回返回IMP.
+
+2) 但是category的方法没有“完全替换掉”原来类已经有的方法，只是把旧的方法名放在列表的后面，也就是说如果category和原来类都有methodA，那么category附加完成之后，类的方法列表里会有两个methodA. 
+
+---
+
+## 涉及知识
+
+[C/C++ memmove与memcpy的区别及实现](https://www.cnblogs.com/lyl-312/p/5514988.html)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ---
+ 
+ 
+ 
+
