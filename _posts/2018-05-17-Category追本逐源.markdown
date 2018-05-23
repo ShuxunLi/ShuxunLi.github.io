@@ -4,13 +4,13 @@ title:      "category追本逐源"
 subtitle:   ""
 date:       2018-05-17
 author:     "李书勋"
-header-img: "img/post-bg-kuaidi.jpg"
+header-img: "img/post-bg-os-metro.jpg"
 tags:
     - iOS
     - runtime
 ---
 
->
+> 在Objective-C 2.0中，提供了category这个语言特性，可以动态地为已有类添加新行为。如今category已经遍布于Objective-C代码的各个角落，从Apple官方的framework到各个开源框架，从功能繁复的大型APP到简单的应用，catagory无处不在。
 
 ## Catagory
    1. [数据结构](#数据结构)
