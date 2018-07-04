@@ -1,0 +1,303 @@
+---
+layout:     post
+title:      "Swift 关键字"
+subtitle:   ""
+date:       2018-06-22
+author:     "李书勋"
+header-img: "img/post-bg-rwd.jpg"
+tags:
+    - swift
+    
+---
+
+
+## Foreword
+
+---
+
+## Catagory
+ 1. [mutating](#mutating)
+ 2. [访问权限](#访问权限)
+    * [open](#open)
+    * [public](#public)
+    * [internal](#internal)
+    * [file-private](#file-private)
+    * [private](#private)
+    * [final](#final)
+3. [associatedtype](#associatedtype)
+4. [where](#where)
+   * [控制流](#控制流)
+   * [有条件地遵循协议](#有条件地遵循协议)
+   * [泛型Where分句](#泛型where分句)
+
+---
+
+
+##  mutating
+
+如果你需要在特定的方法中修改结构体或者枚举的属性，你可以选择将这个方法异变。然后这个方法就可以在方法中异变（改变）它的属性了，并且任何改变在方法结束的时候都会写入到原始的结构体中。方法同样可以指定一个全新的实例给它隐含的 self属性，并且这个新的实例将会在方法结束的时候替换掉现存的这个实例。
+
+你可以选择在 func关键字前放一个 mutating关键字来使用这个行为：
+```objc
+struct Point {
+var x = 0.0, y = 0.0
+mutating func moveBy(x deltaX: Double, y deltaY: Double) {
+x += deltaX
+y += deltaY
+   }
+}
+var somePoint = Point(x: 1.0, y: 1.0)
+somePoint.moveBy(x: 2.0, y: 3.0)
+print("The point is now at (\(somePoint.x), \(somePoint.y))")
+// prints "The point is now at (3.0, 4.0)"
+
+struct Point {
+var x = 0.0, y = 0.0
+mutating func moveBy(x deltaX: Double, y deltaY: Double) {
+x += deltaX
+y += deltaY
+   }
+}
+var somePoint = Point(x: 1.0, y: 1.0)
+somePoint.moveBy(x: 2.0, y: 3.0)
+print("The point is now at (\(somePoint.x), \(somePoint.y))")
+// prints "The point is now at (3.0, 4.0)"  
+```
+
+上文中的Point 结构体定义了一个异变方法 moveBy(x:y:)，它以特定的数值移动一个 Point实例。相比于返回一个新的点，这个方法实际上修改了调用它的点。 被添加到定义中的`mutating`关键字允许它修改自身的属性。
+
+
+若你定义了一个协议的实例方法需求，想要异变任何采用了该协议的类型实例，只需在协议里方法的定义当中使用 `mutating`关键字。这允许结构体和枚举类型能采用相应协议并满足方法要求。
+
+**注意
+如果你在协议中标记实例方法需求为`mutating`，在为类实现该方法的时候不需要写`mutating`关键字。`mutating`关键字只在结构体和枚举类型中需要书写。**
+
+下面的例子定义了一个名为 Togglable 的协议，协议只定义了一个实例方法要求叫做 toggle 。顾名思义， toggle() 方法将切换或转换任何遵循该协议的类型的状态，典型地，修改该类型的属性。
+
+在Togglable协议的定义中， toggle() 方法使用`mutating`关键字标记，来表明该方法在调用时会改变遵循该协议的实例的状态：
+```objc
+protocol Togglable {
+mutating func toggle()
+}
+```
+若使用结构体或枚举实现 Togglable 协议，这个结构体或枚举可以通过使用`mutating`标记这个 toggle() 方法，来保证该实现符合协议要求。
+
+下面的例子定义了一个名为 OnOffSwitch 的枚举。这个枚举在两种状态间改变，即枚举成员 On 和 Off 。该枚举的 toggle 实现使用了 `mutating`关键字，以满足 Togglable 协议需求：
+
+```objc
+enum OnOffSwitch: Togglable {
+case off, on
+mutating func toggle() {
+switch self {
+case .off:
+self = .on
+case .on:
+self = .off
+    }
+  }
+}
+var lightSwitch = OnOffSwitch.off
+lightSwitch.toggle()
+// lightSwitch is now equal to .on
+
+enum OnOffSwitch: Togglable {
+case off, on
+mutating func toggle() {
+switch self {
+case .off:
+self = .on
+case .on:
+self = .off
+    }
+  }
+}
+var lightSwitch = OnOffSwitch.off
+lightSwitch.toggle()
+// lightSwitch is now equal to .on
+```
+ ---
+
+## 访问权限
+  >Swift 为代码的实体提供个五个不同的访问级别。这些访问级别和定义实体的源文件相关，并且也和源文件所属的模块相关。
+  
+### open
+允许实体被定义模块中的任意源文件访问，同样可以被另一模块的源文件通过导入该定义模块来访问。       
+**可以在其他的作用域被访问、被继承、override。**
+    
+### public
+允许实体被定义模块中的任意源文件访问，同样可以被另一模块的源文件通过导入该定义模块来访问。       
+**只能在自己的定义的作用域继承、overrid。     
+  可以在其他的作用域被访问， 但是不能在在其他的作用域被继承、override。**
+### internal
+允许实体被定义模块中的任意源文件访问，但不能被该模块之外的任何源文件访问.        
+**除非已经标注，否则都会使用默认的 internal 访问级别**
+### file-private
+将实体的使用限制于当前定义源文件中。当一些细节在整个文件中使用时，使用 file-private 访问隐藏特定功能的实现细节。
+### private
+ 将实体的使用限制于封闭声明中。当一些细节仅在单独的声明中使用时，使用 private 访问隐藏特定功能的实现细节。
+### final
+ 不允许对其修饰的内容进行继承、override。
+ 
+---
+
+## associatedtype
+
+定义一个协议时，有时在协议定义里声明一个或多个关联类型是很有用的。关联类型给协议中用到的类型一个占位符名称。直到采纳协议时，才指定用于该关联类型的实际类型。关联类型通过`associatedtype`关键字指定。
+
+这里是一个叫做 Container 的示例协议，声明了一个叫做`ItemType`的关联类型：
+```objc
+protocol Container {
+associatedtype ItemType
+mutating func append(_ item: ItemType)
+var count: Int { get }
+subscript(i: Int) -> ItemType { get }
+}
+```
+这是前面非泛型版本的 IntStack ，使其遵循 Container 协议：
+```objc
+struct IntStack: Container {
+// original IntStack implementation
+
+var items = [Int]()
+mutating func push(_ item: Int) {
+items.append(item)
+}
+mutating func pop() -> Int {
+return items.removeLast()
+}
+// conformance to the Container protocol
+
+typealias ItemType = Int
+mutating func append(_ item: Int) {
+self.push(item)
+}
+var count: Int {
+return items.count
+}
+subscript(i: Int) -> Int {
+return items[i]
+  }
+}
+```
+`IntStack`实现了`Container`协议所有的要求，为满足这些要求，封装了`IntStack`里现有的方法。
+
+此外，`IntStack`为了实现`Container`协议，指定了适用于`ItemType`的类型是`Int`类型。`typealias ItemType = Int`把`ItemType`抽象类型转换为了具体的`Int`类型。
+
+感谢Swift的类型推断功能，你不用真的在`IntStack`定义中声明一个具体的`Int`类型`ItemType`。因为`IntStack`遵循`Container`协议的所有要求，通过简单查看 append(_:) 方法的`item`形式参数和下标的返回类型，Swift可以推断出合适的`ItemType`。如果你真的从上面的代码中删除`typealias ItemType = Int`，一切都会正常运行，因为`ItemType`该用什么类型是非常明确的。
+
+你也可以做一个遵循`Container`协议的泛型`Stack`类型：
+```objc
+struct Stack<Element>: Container {
+// original Stack<Element> implementation
+var items = [Element]()
+mutating func push(_ item: Element) {
+items.append(item)
+}
+mutating func pop() -> Element {
+return items.removeLast()
+}
+// conformance to the Container protocol
+mutating func append(_ item: Element) {
+self.push(item)
+}
+var count: Int {
+return items.count
+}
+subscript(i: Int) -> Element {
+return items[i]
+}
+}
+```
+这次，类型形式参数`Element`用于`append(_:)`方法的`item`形式参数和下标的返回类型。因此，对于这个容器，Swift可以推断出 `Element`是适用于`ItemType`的类型。
+
+---
+
+## where
+
+### 控制流
+`for-in`情况可以使用`where`分句来检查额外的情况。
+```objc
+// for - in
+
+let arrayOne = [1,2,3,4,5]
+let dictionary = [1:"hehe1",2:"hehe2"]
+for i in arrayOne where dictionary[i] != nil {
+print(i)
+}
+```
+`switch`情况可以使用`where`分句来检查额外的情况。
+```objc
+// switch case
+
+let yetAnotherPoint = (1, -1)
+switch yetAnotherPoint {
+case let (x, y) where x == y:
+print("(\(x), \(y)) is on the line x == y")
+case let (x, y) where x == -y:
+print("(\(x), \(y)) is on the line x == -y")
+case let (x, y):
+print("(\(x), \(y)) is just some arbitrary point")
+}
+// prints "(1, -1) is on the line x == -y"
+
+```
+### 有条件地遵循协议
+
+泛型类型可能只在某些情况下满足一个协议的要求，比如当类型的泛型形式参数遵循对应协议时。你可以通过在扩展类型时列出限制让泛型类型有条件地遵循某协议。在你采纳协议的名字后面写泛型`where`分句.
+
+下面的扩展让 `Array` 类型在存储遵循 `TextRepresentable` 协议的元素时遵循 `TextRepresentable` 协议。
+```objc
+extension Array: TextRepresentable where Element: TextRepresentable {
+var textualDescription: String {
+let itemsAsText = self.map { $0.textualDescription }
+return "[" + itemsAsText.joined(separator: ", ") + "]"
+}
+}
+let myDice = [d6, d12]
+print(myDice.textualDescription)
+// Prints "[A 6-sided dice, A 12-sided dice]"
+```
+### 泛型Where分句
+
+类型约束在为关联类型定义要求时也很有用。通过定义一个泛型Where分句来实现。泛型 Where 分句让你能够要求一个关联类型必须遵循指定的协议，或者指定的类型形式参数和关联类型必须相同。泛型 Where 分句以 Where 关键字开头，后接关联类型的约束或类型和关联类型一致的关系。泛型 Where 分句写在一个类型或函数体的左半个大括号前面。
+
+下面的例子定义了一个叫做 allItemsMatch 的泛型函数，用来检查两个 Container 实例是否包含相同顺序的相同元素。如果所有元素都匹配，函数返回布尔值 ture ，否则返回 false 。
+
+被检查的两个容器不一定是相同类型的（尽管它们可以是），但是它们的元素类型必须相同。这个要求通过类型约束和泛型 Where 分句一起体现：
+
+```objc
+func allItemsMatch<C1: Container, C2: Container>
+(_ someContainer: C1, _ anotherContainer: C2) -> Bool
+where C1.ItemType == C2.ItemType, C1.ItemType: Equatable {
+
+// Check that both containers contain the same number of items.
+if someContainer.count != anotherContainer.count {
+return false
+}
+
+// Check each pair of items to see if they are equivalent.
+for i in 0..<someContainer.count {
+if someContainer[i] != anotherContainer[i] {
+return false
+}
+}
+
+// All items match, so return true.
+return true
+}
+```
+这个函数有两个形式参数， someContainer 和 anotherContainer 。 someContainer 形式参数是 C1 类型， anotherContainer 形式参数是 C2 类型。 C1  和 C2 是两个容器类型的类型形式参数，它们的类型在调用函数时决定。
+
+下面是函数的两个类型形式参数上设置的要求：
+
+C1 必须遵循 Container 协议（写作 C1: Container ）；        
+C2 也必须遵循 Container 协议（写作 C2: Container ）；        
+C1 的 ItemType 必须和 C2 的 ItemType 相同（写作 C1.ItemType == C2.ItemType ）；            
+C1 的 ItemType 必须遵循 Equatable 协议（写作 C1.ItemType: Equatable ）。          
+前两个要求定义在了函数的类型形式参数列表里，后两个要求定义在了函数的泛型 Where 分句中。
+
+---
+
+
+
+
